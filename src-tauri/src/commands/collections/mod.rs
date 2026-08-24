@@ -4,12 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
-use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::oneshot;
 
 use super::fs_secure::{restrict_dir, restrict_file};
+use super::store::store_file_path;
 
 mod git;
 mod ipc;
@@ -28,7 +28,6 @@ pub(crate) use layout::{desired_endpoint_file_name, find_endpoint_data_file};
 use layout::{find_available_dir, slugify};
 use secrets::redact_auth_secrets;
 
-const STORE_FILE: &str = "resonance-store.json";
 const COLLECTIONS_DIR: &str = "collections";
 const COLLECTION_INDEX_KEY: &str = "collectionIndex";
 const LAST_COLLECTION_DIR_KEY: &str = "lastCollectionDirectory";
@@ -118,11 +117,7 @@ impl EndpointData {
 }
 
 fn get_default_collections_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    Ok(app_data_dir.join(COLLECTIONS_DIR))
+    Ok(crate::paths::app_data_dir(app)?.join(COLLECTIONS_DIR))
 }
 
 pub(crate) fn ensure_default_collections_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -185,7 +180,7 @@ impl CollectionPaths {
 }
 
 fn get_collection_index(app: &AppHandle) -> Result<HashMap<String, String>, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
     let value = store
         .get(COLLECTION_INDEX_KEY)
         .unwrap_or(Value::Object(serde_json::Map::new()));
@@ -194,7 +189,7 @@ fn get_collection_index(app: &AppHandle) -> Result<HashMap<String, String>, Stri
 }
 
 fn save_collection_index(app: &AppHandle, index: &HashMap<String, String>) -> Result<(), String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
     store.set(
         COLLECTION_INDEX_KEY.to_string(),
         serde_json::to_value(index).map_err(|e| e.to_string())?,
@@ -223,7 +218,7 @@ fn unregister_collection_path(app: &AppHandle, collection_id: &str) -> Result<()
 }
 
 fn get_last_collection_directory(app: &AppHandle) -> Option<PathBuf> {
-    let store = app.store(STORE_FILE).ok()?;
+    let store = app.store(store_file_path(&app).ok()?).ok()?;
     let dir_str = store.get(LAST_COLLECTION_DIR_KEY)?.as_str()?.to_string();
     if dir_str.is_empty() {
         return None;
@@ -238,12 +233,14 @@ fn get_last_collection_directory(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn save_last_collection_directory(app: &AppHandle, dir: &Path) {
-    if let Ok(store) = app.store(STORE_FILE) {
-        store.set(
-            LAST_COLLECTION_DIR_KEY.to_string(),
-            Value::String(dir.to_string_lossy().to_string()),
-        );
-        let _ = store.save();
+    if let Ok(path) = store_file_path(app) {
+        if let Ok(store) = app.store(path) {
+            store.set(
+                LAST_COLLECTION_DIR_KEY.to_string(),
+                Value::String(dir.to_string_lossy().to_string()),
+            );
+            let _ = store.save();
+        }
     }
 }
 
@@ -643,7 +640,7 @@ fn redact_collection_secrets(collection: &mut Collection) {
 
 /// Reads the linked map out of the store.
 fn get_linked_collections(app: &AppHandle) -> Result<HashMap<String, String>, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
     let value = store
         .get(link::LINKED_COLLECTIONS_KEY)
         .unwrap_or(Value::Object(serde_json::Map::new()));
@@ -656,7 +653,7 @@ fn save_linked_collections(
     app: &AppHandle,
     linked: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
     store.set(
         link::LINKED_COLLECTIONS_KEY.to_string(),
         serde_json::to_value(linked).map_err(|e| e.to_string())?,
@@ -1179,7 +1176,7 @@ pub async fn collections_needs_migration(app: AppHandle) -> Result<bool, String>
         }
     }
 
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
     let old_collections = store.get("collections").unwrap_or(Value::Null);
 
     match old_collections {
@@ -1190,7 +1187,7 @@ pub async fn collections_needs_migration(app: AppHandle) -> Result<bool, String>
 
 #[tauri::command]
 pub async fn collections_migrate(app: AppHandle) -> Result<u32, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
 
     let old_collections = store.get("collections").unwrap_or(Value::Null);
     let collections: Vec<Value> = match old_collections {

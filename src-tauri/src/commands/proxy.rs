@@ -6,7 +6,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_store::StoreExt;
 
-const STORE_FILE: &str = "resonance-store.json";
+use super::store::store_file_path;
+
 const PROXY_KEY: &str = "proxySettings";
 
 /// Every field defaults, so a stored payload written by an older version (or a
@@ -80,7 +81,10 @@ fn parse_settings(value: Value) -> Option<ProxySettings> {
 /// synthesises a default for an absent key. State is only overwritten on a
 /// successful parse, so unreadable settings leave the defaults intact.
 pub fn hydrate_from_store(app: &AppHandle) {
-    let Ok(store) = app.store(STORE_FILE) else {
+    let Ok(path) = store_file_path(app) else {
+        return;
+    };
+    let Ok(store) = app.store(path) else {
         return;
     };
     let Some(value) = store.get(PROXY_KEY) else {
@@ -370,7 +374,9 @@ pub async fn proxy_set(
     *state.settings.write().unwrap() = settings.clone();
 
     // Persist to store
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app
+        .store(store_file_path(&app)?)
+        .map_err(|e| e.to_string())?;
     store.set(
         PROXY_KEY.to_string(),
         serde_json::to_value(&settings).unwrap(),

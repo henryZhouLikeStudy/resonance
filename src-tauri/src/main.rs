@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod paths;
 
 use commands::{
     api_request::{
@@ -53,13 +54,20 @@ use commands::{
 };
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
+        .plugin(tauri_plugin_updater::Builder::new().build());
+
+    // Window state is persisted through the platform app data dir, which would
+    // leak data outside the executable's folder in portable mode, so portable
+    // runs skip the plugin entirely. Installed runs keep the usual behavior.
+    let builder = if paths::is_portable() {
+        builder
+    } else {
+        builder.plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
@@ -67,6 +75,9 @@ fn main() {
                 )
                 .build(),
         )
+    };
+
+    builder
         .manage(RequestState::default())
         .manage(ProxyState::default())
         .manage(ProtoState::default())
@@ -78,11 +89,8 @@ fn main() {
         .manage(PendingUpdate::default())
         .manage(OAuth2State::default())
         .setup(|app| {
-            use tauri::Manager;
-            if let Ok(dir) = app.path().app_data_dir() {
-                let _ = std::fs::create_dir_all(&dir);
-                commands::fs_secure::restrict_dir(&dir);
-                commands::fs_secure::restrict_file(&dir.join("resonance-store.json"));
+            if let Ok(dir) = paths::ensure_app_data_dir(app.handle()) {
+                commands::fs_secure::restrict_file(&dir.join(commands::store::STORE_FILE));
             }
             commands::proxy::hydrate_from_store(app.handle());
             Ok(())

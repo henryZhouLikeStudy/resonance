@@ -272,6 +272,12 @@ jobs:
         Copy-Item src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe release-artifacts/
         # Copy update artifacts (v2 format: .sig files directly)
         Copy-Item src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig release-artifacts/ -ErrorAction SilentlyContinue
+        # Portable ZIP: the raw executable plus an explicit portable-mode marker,
+        # so the app stores all data beside the executable instead of %APPDATA%.
+        New-Item -ItemType Directory -Force -Path portable-package
+        Copy-Item src-tauri/target/${{ matrix.target }}/release/resonance.exe portable-package/Resonance.exe
+        New-Item -ItemType File -Path portable-package/PORTABLE -Force | Out-Null
+        Compress-Archive -Path portable-package/* -DestinationPath "release-artifacts/Resonance_${VERSION}_${{ matrix.arch }}_portable.zip"
 
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v6
@@ -425,6 +431,8 @@ jobs:
         ### Windows
         - [Installer (x64)](${BASE_URL}/Resonance_${VERSION}_x64-setup.exe)
         - [Installer (arm64)](${BASE_URL}/Resonance_${VERSION}_arm64-setup.exe)
+        - [Portable (x64)](${BASE_URL}/Resonance_${VERSION}_x64_portable.zip)
+        - [Portable (arm64)](${BASE_URL}/Resonance_${VERSION}_arm64_portable.zip)
 
         ---
 
@@ -435,7 +443,9 @@ jobs:
           artifacts/release-linux-arm64/*.deb \
           artifacts/release-mac/*.dmg \
           artifacts/release-windows-x64/*.exe \
-          artifacts/release-windows-arm64/*.exe
+          artifacts/release-windows-arm64/*.exe \
+          artifacts/release-windows-x64/*.zip \
+          artifacts/release-windows-arm64/*.zip
 
         # Upload update manifest (v2 format uses the same files as installers, just needs latest.json)
         gh release upload "$TAG" artifacts/latest.json

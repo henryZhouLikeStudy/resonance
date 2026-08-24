@@ -12,8 +12,8 @@ use tauri_plugin_store::StoreExt;
 
 use super::http_client::{build_http_client, HttpClientOptions};
 use super::proxy::{ProxySettings, ProxyState};
+use super::store::store_file_path;
 
-const STORE_FILE: &str = "resonance-store.json";
 const SCRIPTS_KEY: &str = "persistedScripts";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ fn scripts_are_empty(scripts: &ScriptData) -> bool {
 
 /// Read a one-off script entry from the legacy global store.
 fn read_legacy_store_script(app: &AppHandle, key: &str) -> Option<ScriptData> {
-    let store = app.store(STORE_FILE).ok()?;
+    let store = app.store(store_file_path(app).ok()?).ok()?;
     let map: HashMap<String, ScriptData> = store
         .get(SCRIPTS_KEY)
         .and_then(|v| serde_json::from_value(v).ok())
@@ -77,7 +77,10 @@ fn read_legacy_store_script(app: &AppHandle, key: &str) -> Option<ScriptData> {
 /// store. Best-effort: errors are swallowed because the authoritative copy
 /// already lives in the per-endpoint file.
 fn remove_store_script_entry(app: &AppHandle, collection_id: &str, endpoint_id: &str) {
-    let Ok(store) = app.store(STORE_FILE) else {
+    let Ok(path) = store_file_path(app) else {
+        return;
+    };
+    let Ok(store) = app.store(path) else {
         return;
     };
     let mut map: HashMap<String, Value> = store
@@ -94,7 +97,10 @@ fn remove_store_script_entry(app: &AppHandle, collection_id: &str, endpoint_id: 
 /// Drop every script entry keyed by the given collection from the legacy store.
 /// Called by `collection_delete` to keep the store from accumulating orphans.
 pub(crate) fn purge_store_scripts_for_collection(app: &AppHandle, collection_id: &str) {
-    let Ok(store) = app.store(STORE_FILE) else {
+    let Ok(path) = store_file_path(app) else {
+        return;
+    };
+    let Ok(store) = app.store(path) else {
         return;
     };
     let mut map: HashMap<String, Value> = store

@@ -4,13 +4,13 @@
 
 use super::{Collection, VariableEntry};
 use crate::commands::collections as storage_collections;
+use crate::commands::store::store_file_path;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::oneshot;
 
-const STORE_FILE: &str = "resonance-store.json";
 const LAST_IMPORT_DIR_KEY: &str = "lastImportDirectory";
 
 /// Postman OAuth2 parameter names paired with the app's config keys, as
@@ -40,7 +40,7 @@ pub(crate) fn is_http_method(method: &str) -> bool {
 
 /// Get the last used import directory from the store
 pub(crate) fn get_last_import_directory(app: &AppHandle) -> Option<std::path::PathBuf> {
-    let store = app.store(STORE_FILE).ok()?;
+    let store = app.store(store_file_path(app).ok()?).ok()?;
     let dir_str = store.get(LAST_IMPORT_DIR_KEY)?.as_str()?.to_string();
     if dir_str.is_empty() {
         return None;
@@ -56,12 +56,14 @@ pub(crate) fn get_last_import_directory(app: &AppHandle) -> Option<std::path::Pa
 /// Save the directory of a selected file to the store for next time
 pub(crate) fn save_last_import_directory(app: &AppHandle, file_path: &std::path::Path) {
     if let Some(parent) = file_path.parent() {
-        if let Ok(store) = app.store(STORE_FILE) {
-            store.set(
-                LAST_IMPORT_DIR_KEY.to_string(),
-                serde_json::Value::String(parent.to_string_lossy().to_string()),
-            );
-            let _ = store.save();
+        if let Ok(path) = store_file_path(app) {
+            if let Ok(store) = app.store(path) {
+                store.set(
+                    LAST_IMPORT_DIR_KEY.to_string(),
+                    serde_json::Value::String(parent.to_string_lossy().to_string()),
+                );
+                let _ = store.save();
+            }
         }
     }
 }

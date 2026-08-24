@@ -4,11 +4,12 @@
  */
 export class I18nManager {
     constructor() {
-        this.currentLanguage = 'en';
+        this.currentLanguage = 'zh-CN';
         this.translations = {};
-        this.fallbackLanguage = 'en';
+        this.fallbackLanguage = 'zh-CN';
         this.supportedLanguages = {
             'en': 'English',
+            'zh-CN': '简体中文',
             'de': 'Deutsch',
             'fr': 'Français',
             'it': 'Italiano',
@@ -18,7 +19,7 @@ export class I18nManager {
     }
 
     async init() {
-        this.currentLanguage = await this.getSavedLanguage() || 'en';
+        this.currentLanguage = await this.getSavedLanguage() || 'zh-CN';
         
         await this.loadLanguage(this.currentLanguage);
         
@@ -28,9 +29,9 @@ export class I18nManager {
     async getSavedLanguage() {
         try {
             const settings = await window.backendAPI.settings.get();
-            return settings.language || 'en';
+            return settings.language || 'zh-CN';
         } catch (error) {
-            return 'en';
+            return 'zh-CN';
         }
     }
 

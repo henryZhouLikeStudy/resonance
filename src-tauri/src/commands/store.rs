@@ -1,18 +1,29 @@
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use std::path::PathBuf;
+use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
 use super::fs_secure::restrict_file;
 
-const STORE_FILE: &str = "resonance-store.json";
+pub(crate) const STORE_FILE: &str = "resonance-store.json";
+
+/// Absolute path of the on-disk store file (settings, history, cookie jar,
+/// workspace tabs, ...).
+///
+/// Portable mode: `<exe-dir>/data/resonance-store.json`, so the data travels
+/// with the executable. Installed mode: the Tauri app data dir. The directory
+/// is created on demand so the store plugin can write into it immediately.
+pub(crate) fn store_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::paths::ensure_app_data_dir(app)?.join(STORE_FILE))
+}
 
 /// Best-effort restriction of the on-disk store file to owner-only access.
 /// The store plugin writes it with the process umask (typically world-readable),
 /// so it holds request history, the cookie jar, and any plaintext-fallback
 /// secrets — tighten it after every save.
 pub(crate) fn restrict_store_file(app: &AppHandle) {
-    if let Ok(dir) = app.path().app_data_dir() {
-        restrict_file(&dir.join(STORE_FILE));
+    if let Ok(path) = store_file_path(app) {
+        restrict_file(&path);
     }
 }
 
@@ -43,7 +54,7 @@ fn get_default_for_key(key: &str) -> Value {
             "timeout": 30000,
             "theme": "system",
             "accentColor": "blue",
-            "language": "en"
+            "language": "zh-CN"
         }),
         _ if key.ends_with("Scripts") => serde_json::json!({}),
         _ if key.ends_with("Variables") => serde_json::json!([]),
@@ -53,7 +64,7 @@ fn get_default_for_key(key: &str) -> Value {
 
 #[tauri::command]
 pub async fn store_get(app: AppHandle, key: String) -> Result<Value, String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
 
     let value = store.get(&key).unwrap_or(Value::Null);
 
@@ -66,7 +77,7 @@ pub async fn store_get(app: AppHandle, key: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub async fn store_set(app: AppHandle, key: String, value: Value) -> Result<(), String> {
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    let store = app.store(store_file_path(&app)?).map_err(|e| e.to_string())?;
 
     store.set(key, value);
     store.save().map_err(|e| e.to_string())?;
@@ -85,7 +96,7 @@ pub async fn settings_get(app: AppHandle) -> Result<Value, String> {
             "timeout": 30000,
             "theme": "system",
             "accentColor": "blue",
-            "language": "en"
+            "language": "zh-CN"
         }))
     } else {
         Ok(result)

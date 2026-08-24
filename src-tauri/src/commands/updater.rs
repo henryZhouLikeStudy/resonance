@@ -51,6 +51,14 @@ pub async fn updater_check(
     app: AppHandle,
     pending_update: State<'_, PendingUpdate>,
 ) -> Result<UpdateInfo> {
+    // Portable builds are updated manually by replacing the folder; the
+    // self-update machinery is disabled for them.
+    if crate::paths::is_portable() {
+        return Err(UpdateError::Updater(
+            "Updates are not available in portable mode".to_string(),
+        ));
+    }
+
     // Debug: simulate finding an update
     #[cfg(debug_assertions)]
     if env::var("RESONANCE_SIMULATE_UPDATE").is_ok() {
@@ -110,6 +118,13 @@ pub async fn updater_download_and_install(
     #[allow(unused_variables)] app: AppHandle,
     pending_update: State<'_, PendingUpdate>,
 ) -> Result<()> {
+    // Portable builds are updated manually; never attempt a self-install.
+    if crate::paths::is_portable() {
+        return Err(UpdateError::Updater(
+            "Updates are not available in portable mode".to_string(),
+        ));
+    }
+
     // Debug: simulate download and install (wait, then restart)
     #[cfg(debug_assertions)]
     if env::var("RESONANCE_SIMULATE_UPDATE").is_ok() {
@@ -143,6 +158,19 @@ pub struct InstallInfo {
 
 #[tauri::command]
 pub fn updater_get_install_info() -> InstallInfo {
+    // Portable builds are updated manually by replacing the folder, so the
+    // update UI is hidden and the startup check is skipped.
+    if crate::paths::is_portable() {
+        return InstallInfo {
+            auto_update_supported: false,
+            install_type: "portable".to_string(),
+            message: Some(
+                "Portable builds are updated manually — download the latest version from the releases page."
+                    .to_string(),
+            ),
+        };
+    }
+
     // Debug: allow overriding install type via env var for testing
     #[cfg(debug_assertions)]
     if let Ok(override_type) = env::var("RESONANCE_INSTALL_TYPE") {
