@@ -1,0 +1,70 @@
+name: Windows Portable
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build portable (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: ${{ matrix.arch }}
+
+      - name: Build (no bundle, avoids updater signing)
+        run: npm run build:tauri -- --no-bundle --target ${{ matrix.target }}
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $stage = Join-Path $env:RUNNER_TEMP "portable-${{ matrix.arch }}"
+          $exe = "src-tauri\target\${{ matrix.target }}\release\resonance.exe"
+          $zip = "Resonance_${version}_${{ matrix.arch }}_portable.zip"
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE $zip
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path $exe -Destination (Join-Path $stage "Resonance.exe")
+          New-Item -ItemType File -Path (Join-Path $stage "PORTABLE") | Out-Null
+          Push-Location $stage
+          Compress-Archive -Path "Resonance.exe", "PORTABLE" -DestinationPath $zipPath -CompressionLevel Optimal
+          Pop-Location
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          Write-Host "Created $zip"
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v6
+        with:
+          name: Resonance_${{ env.VERSION }}_${{ matrix.arch }}_portable
+          path: Resonance_${{ env.VERSION }}_${{ matrix.arch }}_portable.zip
+          if-no-files-found: error
